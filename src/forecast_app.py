@@ -265,6 +265,7 @@ def dashboard():
             if col not in last_row.columns:
                 last_row[col] = 0
                 
+        # Ensure exact column order as during training
         X_future = last_row[model_columns]
         
         pred = model.predict(X_future)[0]
