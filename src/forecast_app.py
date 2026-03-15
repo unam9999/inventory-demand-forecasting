@@ -37,7 +37,9 @@ def load_and_prep_data():
     return df_features, df_encoded
 
 def main():
-    st.title("Inventory Demand Forecasting System")
+    st.title("📦 Inventory Demand Forecasting System")
+    st.markdown("Predict future product demand and optimize your store's inventory levels using Machine Learning.")
+    st.divider()
     
     model, model_columns = load_model_and_artifacts()
     if model is None:
@@ -47,14 +49,16 @@ def main():
     df, df_encoded = load_and_prep_data()
     
     # Sidebar controls
-    st.sidebar.header("Forecast Settings")
-    
-    # Select Store and Product
-    store_ids = sorted(df['store_id'].unique())
-    product_ids = sorted(df['product_id'].unique())
-    
-    selected_store = st.sidebar.selectbox("Select Store", store_ids)
-    selected_product = st.sidebar.selectbox("Select Product", product_ids)
+    with st.sidebar:
+        st.header("⚙️ Forecast Settings")
+        st.markdown("Adjust parameters to slice and dice the predictions.")
+        
+        # Select Store and Product
+        store_ids = sorted(df['store_id'].unique())
+        product_ids = sorted(df['product_id'].unique())
+        
+        selected_store = st.selectbox("🏬 Select Store", store_ids)
+        selected_product = st.selectbox("🏷️ Select Product", product_ids)
     
     forecast_horizon = st.sidebar.slider("Forecast Horizon (Days)", 1, 30, 7)
     
@@ -66,17 +70,18 @@ def main():
         st.warning("No data found for this combination.")
         return
         
-    # Display historical data
-    st.subheader(f"Historical Demand: Store {selected_store}, Product {selected_product}")
+    # Create tabs for better UI organization
+    tab1, tab2, tab3 = st.tabs(["📊 Historical Sales", "🔮 Demand Forecast", "📦 Inventory Advice"])
     
-    # Plot history
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(item_history['date'], item_history['units_sold'], label='Historical Sales')
-    ax.set_title("Historical Sales")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Units Sold")
-    ax.grid(True)
-    st.pyplot(fig)
+    with tab1:
+        st.subheader(f"Historical Demand: Store {selected_store}, Product {selected_product}")
+        
+        # Use Streamlit's native interactive line chart
+        chart_data = item_history[['date', 'units_sold']].set_index('date')
+        st.line_chart(chart_data, y="units_sold")
+        
+        with st.expander("View Raw Historical Data"):
+            st.dataframe(item_history[['date', 'units_sold', 'price', 'promotion', 'holiday', 'stockout_flag']], use_container_width=True)
     
     # Forecasting Logic
     # For a real forecast, we need future features.
@@ -172,34 +177,45 @@ def main():
         # Fill the prediction back into recent_history for the next step's lag
         recent_history.iloc[-1, recent_history.columns.get_loc('units_sold')] = pred
         
-    # Display Forecast
-    forecast_df = pd.DataFrame({
-        'Date': future_dates,
-        'Predicted Demand': future_preds
-    })
+    with tab2:
+        st.subheader(f"Forecast for next {forecast_horizon} days")
+        
+        # Display Forecast Dataframe dynamically formatted
+        forecast_df = pd.DataFrame({
+            'Date': future_dates,
+            'Predicted Demand': future_preds
+        })
+        
+        # Plot interactive Forecast
+        # Combine history and forecast for a continuous line
+        plot_history = item_history.tail(30).set_index('date')[['units_sold']]
+        plot_history.rename(columns={'units_sold': 'Historical'}, inplace=True)
+        
+        plot_forecast = forecast_df.set_index('Date')[['Predicted Demand']]
+        plot_forecast.rename(columns={'Predicted Demand': 'Forecast'}, inplace=True)
+        
+        combined_chart_data = pd.concat([plot_history, plot_forecast], axis=1)
+        st.line_chart(combined_chart_data, color=["#1f77b4", "#ff7f0e"])
+        
+        st.markdown("#### Forecast Data Table")
+        st.dataframe(forecast_df.style.highlight_max(axis=0, color='lightgreen', subset=['Predicted Demand']), use_container_width=True)
     
-    st.dataframe(forecast_df)
-    
-    # Plot Forecast
-    fig2, ax2 = plt.subplots(figsize=(10, 4))
-    # Show last 30 days of history + forecast
-    plot_history = item_history.tail(30)
-    ax2.plot(plot_history['date'], plot_history['units_sold'], label='History')
-    ax2.plot(forecast_df['Date'], forecast_df['Predicted Demand'], label='Forecast', linestyle='--', color='red')
-    ax2.set_title("Demand Forecast")
-    ax2.legend()
-    ax2.grid(True)
-    st.pyplot(fig2)
-    
-    # Inventory Advice
-    st.subheader("Inventory Recommendations")
-    total_demand = sum(future_preds)
-    safety_stock = np.std(item_history['units_sold']) * 1.65 # 95% service level approx
-    reorder_point = total_demand + safety_stock
-    
-    st.write(f"**Total Predicted Demand (next {forecast_horizon} days):** {total_demand:.2f}")
-    st.write(f"**Recommended Safety Stock:** {safety_stock:.2f}")
-    st.write(f"**Suggested Reorder Quantity (to cover period + safety):** {reorder_point:.2f}")
+    with tab3:
+        st.subheader("Inventory Recommendations")
+        total_demand = sum(future_preds)
+        safety_stock = np.std(item_history['units_sold']) * 1.65 # 95% service level approx
+        reorder_point = total_demand + safety_stock
+        
+        # Use visually appealing metric cards
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(label=f"Total Demand ({forecast_horizon} Days)", value=f"{total_demand:.0f} units")
+        with col2:
+            st.metric(label="Safety Stock", value=f"{safety_stock:.0f} units", help="95% service level buffer")
+        with col3:
+            st.metric(label="Reorder Quantity", value=f"{reorder_point:.0f} units", delta="Order Now", delta_color="normal")
+            
+        st.info(f"💡 **Recommendation:** Based on the predicted demand and historical volatility, immediately placing an order for **{reorder_point:.0f} units** ensures optimal coverage for the next {forecast_horizon} days.")
 
 if __name__ == "__main__":
     main()
